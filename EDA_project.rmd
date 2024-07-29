@@ -1,0 +1,559 @@
+---
+title: "PROJECT"
+author: ""
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+Gender	                                      Gender
+Age	                                          Age
+Height	                                      Height
+Weight	                                      Weight
+Family history with overweight	              family_history_with_overweight
+Frequency of consumption of high caloric food	FAVC
+Frequency of consumption of vegetables	      FCVC
+Number of main meals	                        NCP
+Consumption of food between meals	            CAEC
+Smoking	                                      SMOKE
+Consumption of water daily	                  CH2O
+Calories consumption monitoring	              SCC
+Physical activity frequency	                  FAF
+Time using technology devices	                TUE
+Consumption of alcohol	                      CALC
+Transportation used	                          MTRANS
+Obesity class	                                NObeyesdad
+
+```{r}
+data <- read.csv("C:\\Users\\madav\\Downloads\\EDA train.csv")
+head(data)
+colnames(data)
+data <- select(data, Gender, Age, Height, Weight, family_history_with_overweight, FAVC, FCVC, NCP, CAEC, SMOKE, CH2O, SCC, FAF, TUE, CALC, MTRANS, NObeyesdad)
+head(data)
+```
+```{r}
+library(tidyverse)  
+library(ggplot2)
+library(dplyr) 
+library(e1071)   
+library(xgboost) 
+library(caret) 
+library(gbm)  
+```
+
+
+```{r}
+str(data)
+```
+
+```{r}
+summary(data[, c("Age", "Height", "Weight", "FCVC", "NCP", "CH2O", "FAF", "TUE")])
+```
+
+
+```{r}
+summary(data[, c("Gender", "family_history_with_overweight", "FAVC", "CAEC", "SMOKE", "SCC", "CALC", "MTRANS", "NObeyesdad")])
+```
+
+
+```{r}
+ggplot(data, aes(x = NObeyesdad)) +
+  geom_bar(fill = "skyblue") +
+  labs(x = "Obesity Level", y = "Count", title = "Distribution of Obesity Levels")
+```
+
+
+```{r}
+ggplot(data, aes(x = Gender, y = Age, fill = Gender)) +
+  geom_boxplot() +
+  labs(x = "Gender", y = "Age", title = "Boxplot of Age by Gender")
+```
+
+
+```{r}
+ggplot(data, aes(x = Height, y = Weight, color = Gender)) +
+  geom_point() +
+  labs(x = "Height", y = "Weight", color = "Gender", title = "Scatterplot of Weight vs. Height")
+```
+
+
+```{r}
+correlation_matrix <- cor(data[, c("Age", "Height", "Weight", "FCVC", "NCP", "CH2O", "FAF", "TUE")])
+print(correlation_matrix)
+```
+
+```{r}
+ggplot(data = melt(correlation_matrix), aes(Var1, Var2, fill = value)) +
+  geom_tile(color = "white") +
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0) +
+  labs(title = "Correlation Heatmap")
+```
+
+```{r}
+# Assuming your original dataset is named 'data'
+
+# Identify categorical variables
+categorical_vars <- c("Gender", "family_history_with_overweight", "FAVC", "CAEC", "SMOKE", "SCC", "CALC", "MTRANS", "NObeyesdad")
+
+# Function to label encode a single variable
+label_encode <- function(data, col) {
+  data %>%
+    mutate(!!col := as.integer(factor(!!sym(col), levels = unique(!!sym(col)))))
+}
+
+# Create a new data frame for encoded values
+encoded_data <- data
+
+# Apply label encoding to all categorical variables in the new data frame
+for (var in categorical_vars) {
+  encoded_data <- label_encode(encoded_data, var)
+}
+
+train_data <- encoded_data
+
+# Display the transformed dataset
+head(train_data)
+```
+
+```{r}
+
+
+# Assuming your dataset is named 'encoded_data'
+
+# Define the function for creating density plots
+plot_density <- function(data, var) {
+  ggplot(data, aes(x = !!sym(var))) +
+    geom_density(fill = "skyblue", color = "black") +
+    labs(x = var, y = "Density", title = paste("Density Plot of", var))
+}
+
+# List of all variables in the dataset
+all_vars <- names(encoded_data)
+
+# Plot density for each variable
+density_plots <- lapply(all_vars, function(var) {
+  plot_density(encoded_data, var)
+})
+
+# Display the density plots
+print(density_plots)
+```
+```{r}
+val <- read.csv("C:\\Users\\madav\\Downloads\\EDA.csv")
+val <- select(val, -id)
+
+categorical_vars <- c("Gender", "family_history_with_overweight", "FAVC", "CAEC", "SMOKE", "SCC", "CALC", "MTRANS")
+
+# Function to label encode a single variable
+label_encode <- function(data, col) {
+  val %>%
+    mutate(!!col := as.integer(factor(!!sym(col), levels = unique(!!sym(col)))))
+}
+
+# Create a new data frame for encoded values
+encoded_data <- val
+
+# Apply label encoding to all categorical variables in the new data frame
+for (var in categorical_vars) {
+  val <- label_encode(val, var)
+}
+
+# Display the transformed dataset
+head(val)
+```
+```{r}
+str(train_data)
+```
+
+```{r}
+folds <- createFolds(train_data$NObeyesdad, k = 5, list = TRUE, returnTrain = FALSE)
+
+svm_model <- train(
+  x = train_data[, -which(names(train_data) == 'NObeyesdad')],
+  y = train_data$NObeyesdad,
+  method = "svmPoly", 
+  trControl = trainControl(method = "cv", index = folds),
+  verbose = FALSE
+)
+
+xgb_model <- train(
+  x = train_data[, -which(names(train_data) == 'NObeyesdad')],
+  y = train_data$NObeyesdad,
+  method = "xgbTree",  
+  trControl = trainControl(method = "cv", index = folds),
+  verbose = FALSE,
+  tuneGrid = expand.grid(
+    nrounds = seq(100, 500, by = 50),  
+    max_depth = c(3, 5, 7), 
+    eta = c(0.1, 0.3, 0.5),  
+    gamma = c(0, 0.1, 0.2),  
+    colsample_bytree = c(0.6, 0.8, 1),  
+    min_child_weight = c(1, 3, 5),
+    subsample = c(0.6, 0.8, 1) 
+  )
+)
+
+gbm_model <- train(
+  x = train_data[, -which(names(train_data) == 'NObeyesdad')],
+  y = train_data$NObeyesdad,
+  method = "gbm",  
+  trControl = trainControl(method = "cv", index = folds),
+  verbose = FALSE
+)
+```
+
+```{r}
+set.seed(123)
+
+test_indices <- createDataPartition(train_data$NObeyesdad, p = 0.15, list = FALSE)
+
+train_data <- train_data[-test_indices, ]  
+test_data <- train_data[test_indices, ] 
+
+print(paste("Training data dimensions:", dim(train_data)))
+print(paste("Testing data dimensions:", dim(test_data)))
+
+```
+```{r}
+test_data
+```
+
+
+```{r}
+svm_predictions <- predict(svm_model, newdata = test_data[, -which(names(test_data) == 'NObeyesdad')])
+xgb_predictions <- predict(xgb_model, newdata = test_data[, -which(names(test_data) == 'NObeyesdad')])
+gbm_predictions <- predict(gbm_model, newdata = test_data[, -which(names(test_data) == 'NObeyesdad')])
+
+map_to_classes <- function(prediction) {
+  ifelse(prediction <= 1.5, 1,
+         ifelse(prediction <= 2.5, 2,
+                ifelse(prediction <= 3.5, 3,
+                       ifelse(prediction <= 4.5, 4,
+                              ifelse(prediction <= 5.5, 5,
+                                     ifelse(prediction <= 6.5, 6, 7))))))  # Assuming predictions are between 1 and 7
+}
+
+svm_classes <- map_to_classes(svm_predictions)
+gbm_classes <- map_to_classes(gbm_predictions)
+xgb_classes <- map_to_classes(xgb_predictions)
+
+head(svm_classes)
+head(gbm_classes)
+head(xgb_classes)
+
+combined_predictions <- cbind(svm_classes, xgb_classes, gbm_classes)
+
+head(combined_predictions)
+
+majority_voting_predictions <- apply(combined_predictions, 1, function(row) {
+  majority_vote <- names(sort(table(row), decreasing = TRUE))[1] 
+  majority_vote
+})
+
+majority_voting_predictions <- as.integer(majority_voting_predictions)
+majority_voting_predictions <- factor(majority_voting_predictions)
+majority_voting_predictions
+
+test_data$NObeyesdad <- factor(test_data$NObeyesdad)
+test_data$NObeyesdad
+
+accuracy <- confusionMatrix(data = majority_voting_predictions, reference = test_data$NObeyesdad)$overall['Accuracy']
+
+print(paste("Accuracy of the hybrid model using majority voting:", accuracy))
+
+```
+
+```{r}
+# Load the required libraries
+library(xgboost)  # For XGBoost model
+
+# Assuming you have already trained an XGBoost model named xgb_model
+
+# Get feature importance scores from the trained XGBoost model
+importance_scores <- xgb.importance(model = xgb_model)
+
+importance_matrix = importance(xgb_model)
+
+
+# Print the feature importance scores
+print("Feature Importance Scores:")
+print(importance_scores)
+
+# Alternatively, you can extract the feature importance scores as a data frame
+importance_df <- as.data.frame(importance_scores)
+
+# Display the feature importance data frame
+print("Feature Importance Data Frame:")
+print(importance_df)
+summary(gbm_model)
+
+```
+
+```{r}
+library(smotefamily)
+```
+```{r}
+data$NObeyesdad<-as.factor(data$NObeyesdad)
+```
+
+```{r}
+summary(data$NObeyesdad)
+```
+
+
+```{r}
+print("Class distribution of target variable down upsampling:")
+table(train_data$NObeyesdad)
+
+```
+
+```{r}
+# Plot the class distribution of the target variable
+barplot(table(train_data$NObeyesdad), main = "Class Distribution", xlab = "Class", ylab = "Frequency")
+
+```
+
+
+
+```{r}
+# Load the necessary libraries
+library(smotefamily)
+library(caret)
+
+# Assuming your original dataset is named 'data'
+data <- read.csv("C:\\Users\\madav\\Downloads\\EDA train.csv")
+
+# Identify categorical variables
+categorical_vars <- c("Gender", "family_history_with_overweight", "FAVC", "CAEC", "SMOKE", "SCC", "CALC", "MTRANS", "NObeyesdad")
+
+# Function to label encode a single variable
+label_encode <- function(data, col) {
+  data %>%
+    mutate(!!col := as.integer(factor(!!sym(col), levels = unique(!!sym(col)))))
+}
+
+# Create a new data frame for encoded values
+encoded_data <- data
+
+# Apply label encoding to all categorical variables in the new data frame
+for (var in categorical_vars) {
+  encoded_data <- label_encode(encoded_data, var)
+}
+
+# Convert the response variable to a factor
+encoded_data$NObeyesdad <- as.factor(encoded_data$NObeyesdad)
+
+# Split the data into training and testing sets
+set.seed(123)
+train_indices <- createDataPartition(encoded_data$NObeyesdad, p = 0.85, list = FALSE)
+train_data <- encoded_data[train_indices, ]
+test_data <- encoded_data[-train_indices, ]
+
+
+
+# Display the transformed dataset
+head(train_smote$data)
+```
+```{r}
+barplot(table(train_data$NObeyesdad), main = "Class Distribution", xlab = "Class", ylab = "Frequency")
+
+```
+
+```{r}
+str(train_data)
+```
+```{r}
+data$NObeyesdad<-as.factor(data$NObeyesdad)
+```
+```{r}
+head(downsampled_data)
+```
+```{r}
+# Assuming your original dataset is named 'data'
+
+# Identify categorical variables
+categorical_vars <- c("Gender", "family_history_with_overweight", "FAVC", "CAEC", "SMOKE", "SCC", "CALC", "MTRANS", "NObeyesdad")
+
+# Function to label encode a single variable
+label_encode <- function(downsampled_data, col) {
+  downsampled_data %>%
+    mutate(!!col := as.integer(factor(!!sym(col), levels = unique(!!sym(col)))))
+}
+
+# Create a new data frame for encoded values
+encoded_data <- downsampled_data
+
+# Apply label encoding to all categorical variables in the new data frame
+for (var in categorical_vars) {
+  encoded_data <- label_encode(encoded_data, var)
+}
+
+downsampled_data <- encoded_data
+
+# Display the transformed dataset
+head(downsampled_data)
+```
+
+
+```{r}
+# Get the index of the target variable column
+target_column_index <- which(colnames(downsampled_data) == "Class")
+
+# Print the index of the target variable column
+print(target_column_index)
+
+# Downsample the data, ensuring the target variable is a factor
+downsampled_data <- downSample(data[, -target_column_index], data$NObeyesdad, list = FALSE)
+
+# Check the structure of downsampled data
+str(downsampled_data)
+
+# Now, try to extract the independent variables
+independent_vars <- downsampled_data[, !names(downsampled_data) %in% "Class"]
+
+# Print the independent variables
+print(independent_vars)
+
+```
+
+
+
+```{r}
+target_column_index <- which(colnames(data) == "NObeyesdad")
+
+
+# Print the index of the target variable column
+print(target_column_index)
+downsampled_data <- downSample(data[, -target_column_index], data$NObeyesdad, list = FALSE)
+downsampled_data$Class<-as.factor(downsampled_data$Class)
+table(downsampled_data$NObeyesdad)
+summary(downsampled_data[, target_column_index])
+barplot(table(downsampled_data$Class), main = "Class Distribution", xlab = "Class", ylab = "Frequency")
+```
+
+```{r}
+# Check for missing values in the dataset
+tail(downsampled_data)
+
+```
+
+
+```{r}
+# Assuming your original dataset is named 'data'
+
+# Identify categorical variables
+categorical_vars <- c("Gender", "family_history_with_overweight", "FAVC", "CAEC", "SMOKE", "SCC", "CALC", "MTRANS", "Class")
+
+# Function to label encode a single variable
+label_encode <- function(downsampled_data, col) {
+  downsampled_data %>%
+    mutate(!!col := as.integer(factor(!!sym(col), levels = unique(!!sym(col)))))
+}
+
+# Create a new data frame for encoded values
+encoded_data <- downsampled_data
+
+# Apply label encoding to all categorical variables in the new data frame
+for (var in categorical_vars) {
+  encoded_data <- label_encode(encoded_data, var)
+}
+
+downsampled_data <- encoded_data
+
+# Display the transformed dataset
+head(downsampled_data)
+```
+
+
+
+```{r}
+folds <- createFolds(downsampled_data$Class, k = 5, list = TRUE, returnTrain = FALSE)
+
+svm_model <- train(
+  x = downsampled_data[, -which(names(downsampled_data) == 'Class')],
+  y = downsampled_data$Class,
+  method = "svmPoly", 
+  trControl = trainControl(method = "cv", index = folds),
+  verbose = FALSE
+)
+
+xgb_model <- train(
+  x = downsampled_data[, -which(names(downsampled_data) == 'Class')],
+  y = downsampled_data$Class,
+  method = "xgbTree",  
+  trControl = trainControl(method = "cv", index = folds),
+  verbose = FALSE,
+  tuneGrid = expand.grid(
+    nrounds = seq(100, 500, by = 50),  
+    max_depth = c(3, 5, 7), 
+    eta = c(0.1, 0.3, 0.5),  
+    gamma = c(0, 0.1, 0.2),  
+    colsample_bytree = c(0.6, 0.8, 1),  
+    min_child_weight = c(1, 3, 5),
+    subsample = c(0.6, 0.8, 1) 
+  )
+)
+
+gbm_model <- train(
+  x = downsampled_data[, -which(names(downsampled_data) == 'Class')],
+  y = downsampled_data$Class,
+  method = "gbm",  
+  trControl = trainControl(method = "cv", index = folds),
+  verbose = FALSE
+)
+```
+
+```{r}
+svm_predictions <- predict(svm_model, newdata = downsampled_data[, -which(names(downsampled_data) == 'Class')])
+xgb_predictions <- predict(xgb_model, newdata = downsampled_data[, -which(names(downsampled_data) == 'Class')])
+gbm_predictions <- predict(gbm_model, newdata = downsampled_data[, -which(names(downsampled_data) == 'Class')])
+
+map_to_classes <- function(prediction) {
+  ifelse(prediction <= 1.5, 1,
+         ifelse(prediction <= 2.5, 2,
+                ifelse(prediction <= 3.5, 3,
+                       ifelse(prediction <= 4.5, 4,
+                              ifelse(prediction <= 5.5, 5,
+                                     ifelse(prediction <= 6.5, 6, 7))))))  # Assuming predictions are between 1 and 7
+}
+
+svm_classes <- map_to_classes(svm_predictions)
+gbm_classes <- map_to_classes(gbm_predictions)
+xgb_classes <- map_to_classes(xgb_predictions)
+
+head(svm_classes)
+head(gbm_classes)
+head(xgb_classes)
+
+combined_predictions <- cbind(svm_classes, xgb_classes, gbm_classes)
+
+head(combined_predictions)
+
+majority_voting_predictions <- apply(combined_predictions, 1, function(row) {
+  majority_vote <- names(sort(table(row), decreasing = TRUE))[1] 
+  majority_vote
+})
+
+majority_voting_predictions <- as.integer(majority_voting_predictions)
+majority_voting_predictions <- factor(majority_voting_predictions)
+majority_voting_predictions
+
+downsampled_data$Class <- factor(downsampled_data$Class)
+downsampled_data$Class
+
+accuracy_1<- confusionMatrix(data = majority_voting_predictions, reference = downsampled_data$Class)$overall['Accuracy']
+
+print(paste("Accuracy of the hybrid model using majority voting after downsampling:", accuracy_1))
+
+```
+
+```{r}
+write.csv(svm_predictions, file = "svm_pred.csv", row.names = F)
+write.csv(xgb_predictions, file = "xgb_pred.csv", row.names = F)
+write.csv(gbm_predictions, file = "gbm_pred.csv", row.names = F)
+```
+
+
+
